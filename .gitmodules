@@ -1,0 +1,3 @@
+[submodule "deps/nginx-jq"]
+	path = deps/nginx-jq
+	url = https://github.com/kjdev/nginx-jq
