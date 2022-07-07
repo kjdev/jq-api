@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ -n "${JQ_API_DEBUG}" ]; then
+  set -x
+fi
+
+config="${JQ_API_CONFIG:-config.json}"
+work_dir="${JQ_API_WORKING_DIR:-/var/local/jq-api}"
+cli_script="${work_dir}/${JQ_API_CLI_SCRIPT:-cli.sh}"
+server_config="${work_dir}/${JQ_API_SERVER_CONFIG:-server.conf}"
+checksum_file="${work_dir}/$(basename "${config}").checksum"
+
+checksum()
+{
+  if [[ ! -f "${checksum_file}" ]] || [[ "${*}" =~ -u ]]; then
+    sha1sum "${config}" > "${checksum_file}"
+  fi
+  sha1sum -c "${checksum_file}" > /dev/null 2>&1
+}
+
+generate_cli_script()
+{
+  jq-api-generator cli "${config}" > "${cli_script}"
+  chmod 755 "${cli_script}"
+  case "${1}" in
+    -)
+      cat "${cli_script}"
+      ;;
+    -v)
+      echo "=> generate cli script: ${cli_script}"
+      ;;
+  esac
+  checksum -u
+}
+
+generate_server_configuration()
+{
+  jq-api-generator server "${config}" > "${server_config}"
+  case "${1}" in
+    -)
+      cat "${server_config}"
+      ;;
+    -v)
+      echo "=> generate server configuration: ${server_config}"
+      ;;
+  esac
+  checksum -u
+}
+
+cli()
+{
+  if [[ ! -f "${cli_script}" ]] || ! checksum; then
+    generate_cli_script
+  fi
+
+  exec "${cli_script}" "${@}"
+}
+
+server()
+{
+  if [[ ! -f "${server_config}" ]] || ! checksum; then
+    generate_server_configuration
+  fi
+
+  if [[ "${1}" == "reload" ]]; then
+    exec nginx -s reload
+  else
+    exec nginx -g 'daemon off;'
+  fi
+}
+
+help()
+{
+  cat << EOT
+Usage: ${0##*/} <COMMAND>
+
+Command:
+  generate [cli|server] [-]  create cli script and server configuration
+  cli                        run cli
+  server [reload]            run or reload server
+EOT
+}
+
+main()
+{
+  if [[ ! -f "${config}" ]]; then
+    echo "${0##*/}: no such config file: ${config}" >&2
+    exit 1
+  fi
+
+  case "${1}" in
+    generate)
+      if [[ -z "${2}" ]] || [[ "${2}" == "cli" ]]; then
+        generate_cli_script "${3:--v}"
+      fi
+      if [[ -z "${2}" ]] || [[ "${2}" == "server" ]]; then
+        generate_server_configuration "${3:--v}"
+      fi
+      ;;
+    cli)
+      shift 1
+      cli "${@}"
+      ;;
+    server)
+      shift 1
+      server "${@}"
+      ;;
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      help
+      exit 1
+      ;;
+  esac
+}
+
+main "${@}"
