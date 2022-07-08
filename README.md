@@ -239,6 +239,8 @@ server errors.
 Example
 -------
 
+> other examples: [example](example/README.md)
+
 Create a JSON data file.
 
 ``` sh

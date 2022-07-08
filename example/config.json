@@ -1,0 +1,69 @@
+{
+  "json": "./data.json",
+  "library_path": "./modules",
+  "arguments": {
+    "item": {},
+    "limit": {
+      "pattern": "number"
+    },
+    "since": {
+      "pattern": "number"
+    },
+    "repo": {},
+    "criteria": {
+      "pattern": "json"
+    }
+  },
+  "routes": {
+    "repos": {
+      "parameters": [
+        "item",
+        "limit",
+        "since"
+      ],
+      "filter": "include \"repos\"; list($item; $limit; $since)"
+    },
+    "repos/{repo}": {
+      "parameters": [
+        "item"
+      ],
+      "filter": "include \"repos\"; repo($repo; $item)"
+    },
+    "repos/{repo}/{item}": {
+      "filter": "include \"repos\"; repo($repo; $item)"
+    },
+    "repos/count": {
+      "filter": "include \"repos\"; count"
+    },
+    "repos/language": {
+      "filter": "include \"repos\"; language"
+    },
+    "repos/license": {
+      "filter": "include \"repos\"; license"
+    },
+    "repos/search": {
+      "parameters": [
+        "criteria",
+        "item",
+        "limit",
+        "since"
+      ],
+      "filter": "include \"repos\"; search($criteria; $item; $limit; $since)"
+    }
+  },
+  "settings": {
+    "cli": {
+      "options": "-C"
+    },
+    "server": {
+      "cors": {
+        "origin": "http://localhost",
+        "methods": "GET",
+        "headers": "Origin"
+      },
+      "error": {
+        "filter": "{\"code\":\"UNHANDLED_MATCH\",\"message\":\"Unhandled match path\"}"
+      }
+    }
+  }
+}
