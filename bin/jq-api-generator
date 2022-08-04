@@ -236,7 +236,7 @@ EOT
     regex="$(echo "${pattern}" | sed 's/\([{}]\)/\\\1/g')"
   cat << EOT
           ${arg})
-            if [[ -z "\${data}" ]] || [[ ! "\${data}" =~ ^${regex}\$ ]]; then
+            if [[ -z "\${data}" ]] || [[ ! "\${data}" =~ ^(${regex})\$ ]]; then
               echo "cli: invalid data: ${arg}=${pattern}: \${data}" >&2
               exit 1
             fi
