@@ -56,6 +56,7 @@ RUN apk --no-cache upgrade \
       -e 's/^user /#user /' \
       -e 's@^error_log .*$@error_log /dev/stderr warn;@' \
       -e 's@access_log .*;$@access_log /dev/stdout main;@' \
+      -e 's@log_format main @log_format main escape=none @' \
       -i /etc/nginx/nginx.conf \
  && mkdir -p /var/local/jq-api \
  && chown nginx:nginx /var/local/jq-api
