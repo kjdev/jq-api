@@ -24,6 +24,8 @@ A JSON file of configuration and data is also required to run.
 > ``` dockerfile
 > WORKDIR /app
 > ONBUILD COPY . /app/
+> ONBUILD RUN /usr/local/bin/jq-api generate cli \
+>          && /usr/local/bin/jq-api generate server
 > ```
 >
 > Place the files in WORKDIR (/app) or
@@ -56,6 +58,20 @@ config.json:
       "options": "[JQ OPTIONS FOR CLI]"
     },
     "server": {
+      "cors": {
+        "origin": "[NGINX CORS ORIGIN]",
+        "methods": "[NGINX CORS METHODS]",
+        "headers": "[NGINX CORS HEADERS]"
+      },
+      "ssl": {
+        "certificate": "[NGINX CERTIFICATE FILE]",
+        "certificate_key": "[NGINX_CERTIFICATE KEY FILE]"
+      },
+      "cache": {
+        "path": "[NGINX CACHE PATH]",
+        "time": "[NGINX CACHE TIME]",
+        "max_size": "[NGINX CACHE MAXIMUM SIZE]"
+      },
       "error": {
         "filter": "[JQ FILTER FOR SERVER ERROR]"
       }
@@ -122,7 +138,7 @@ The value of pattern is used by bash for regular expression comparison
 during command line processing.
 
 ``` bash
-if [[ ! "${data}" =~ ^${regex}$ ]]; ..
+if [[ ! "${data}" =~ ^(${regex})$ ]]; ..
 ```
 
 Value handling:
@@ -221,6 +237,44 @@ The `server.cors` object can set CORS response headers.
 - credentials: If true, output the `Access-Control-Allow-Credentials: true`
   header.
 
+The `server.ssl` object can set HTTPS.
+
+``` json
+{
+  "settings": {
+    "server": {
+      "ssl": {
+        "cert": "/path/to/cert.pem",
+        "key": "/path/to/cert-key.pem"
+      }
+    }
+  }
+}
+```
+
+- cert: Specifies a file with the certificate in the PEM format.
+- key: Specifies a file with the secret key in the PEM format.
+
+The `server.cache` object can set cache.
+
+``` json
+{
+  "settings": {
+    "server": {
+      "cache": {
+        "path": "/dev/shm/nginx",
+        "time": "24h",
+        "max_size": "10m"
+      }
+    }
+  }
+}
+```
+
+- path: Specifies the directory to store cache files
+- time: Specifies the cache time
+- max_size: Specifies the maximum capacity of the cache.
+
 The `server.error` object allows you to configure what to do in case of
 server errors.
 
@@ -235,6 +289,16 @@ server errors.
   }
 }
 ```
+
+Environment variable
+--------------------
+
+| name                 | default value     | description                       |
+|----------------------|-------------------|-----------------------------------|
+| JQ_API_CONFIG        | config.json       | configuration file                |
+| JQ_API_WORKING_DIR   | /var/local/jq-api | work data output directory        |
+| JQ_API_CLI_SCRIPT    | cli.sh            | command line script file          |
+| JQ_API_SERVER_CONFIG | server.conf       | server (nginx) configuration file |
 
 Example
 -------
