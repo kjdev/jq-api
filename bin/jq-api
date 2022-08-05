@@ -12,6 +12,512 @@ cli_script="${work_dir}/${JQ_API_CLI_SCRIPT:-cli.sh}"
 server_config="${work_dir}/${JQ_API_SERVER_CONFIG:-server.conf}"
 checksum_file="${work_dir}/$(basename "${config}").checksum"
 
+error()
+{
+  echo "${*}" >&2
+  exit 1
+}
+
+config_jq_filter()
+{
+  jq -r "${1:-.}" "${config}"
+}
+
+config_json()
+{
+  realpath "$(config_jq_filter .json)"
+}
+
+config_library_path()
+{
+  local path
+  path=$(config_jq_filter 'if has("library_path") then .library_path else "" end')
+  if [[ -n "${path}" ]]; then
+    realpath "${path}"
+  fi
+}
+
+config_arguments_keys()
+{
+  config_jq_filter '.arguments | keys[]'
+}
+
+config_arguments_has()
+{
+  if [[ -z "${1}" ]]; then
+    error "configure: arguments key is not specified"
+  fi
+  local has
+  has=$(config_jq_filter ".arguments | has(\"${1}\")")
+  if [[ "${has}" == "false" ]]; then
+    error "configure: arguments.[${1}] key is missing"
+  fi
+}
+
+config_arguments_pattern()
+{
+  if [[ -z "${1}" ]]; then
+    error "configure: arguments.[].pattern key is not specified"
+  fi
+  local pattern
+  pattern=$(config_jq_filter ".arguments.\"${1}\" | if has(\"pattern\") then .pattern else \"\" end")
+  case "${pattern}" in
+    number)
+      echo '[1-9][0-9]*'
+      ;;
+    json)
+      echo '{.*}'
+      ;;
+    *)
+      echo "${pattern:-.*}"
+      ;;
+  esac
+}
+
+config_routes_keys()
+{
+  config_jq_filter '.routes | keys[]'
+}
+
+config_routes_filter()
+{
+  if [[ -z "${1}" ]]; then
+    error "configure: routes.[].filter key is not specified"
+  fi
+  local filter
+  filter=$(config_jq_filter ".routes.\"${1}\" | if has(\"filter\") then .filter else \"\" end")
+  if [[ -z "${filter}" ]]; then
+    error "configure: routes.[${1}].filter key is missing"
+  fi
+  echo "${filter}"
+}
+
+config_routes_parameters()
+{
+  if [[ -z "${1}" ]]; then
+    error "configure: routes.[].parameters key is not specified"
+  fi
+  config_jq_filter ".routes.\"${1}\" | if has(\"parameters\") then .parameters[] else \"\" end"
+}
+
+config_route_remove_curly_braces()
+{
+  if [[ -z "${1}" ]]; then
+    error "configure: route key is not specified"
+  fi
+  echo "${1}"| grep -o '{[^}]*}' | tr -d '{' | tr -d '}'
+}
+
+config_settings_cli_options()
+{
+  local var
+  var=$(config_jq_filter '.settings.cli.options')
+  if [[ -n "${var}" ]] && [[ "${var}" != "null" ]]; then
+    echo "${var}"
+  fi
+}
+
+config_settings_server_cors()
+{
+  local -r key="${1}"
+  local var
+  if [[ -n "${key}" ]]; then
+    var=$(config_jq_filter ".settings.server.cors.\"${key}\"")
+    if [[ -n "${var}" ]] && [[ "${var}" != "null" ]]; then
+      echo "${var}"
+    fi
+  fi
+}
+
+config_settings_server_error_filter()
+{
+  local var
+  var=$(config_jq_filter '.settings.server.error.filter')
+  if [[ -n "${var}" ]] && [[ "${var}" != "null" ]]; then
+    echo "${var}"
+  fi
+}
+
+generator_bash_script()
+{
+  local json
+  json=$(config_json)
+  cat << EOT
+#!/usr/bin/env bash
+
+set -e
+
+json=${json}
+EOT
+  local library_path
+  library_path=$(config_library_path)
+  if [[ -n "${library_path}" ]]; then
+    cat << EOT
+library_path=${library_path}
+EOT
+  fi
+
+  # data
+  cat << EOT
+
+data()
+{
+  local -r delimiter="\${2:-=}"
+
+  case "\${1}" in
+EOT
+  local arg
+  local pattern
+  while IFS= read -r arg; do
+    pattern=$(config_arguments_pattern "${arg}")
+    cat << EOT
+    ${arg})
+      echo "  ${arg}\${delimiter}${pattern}"
+      ;;
+EOT
+  done < <(config_arguments_keys)
+  cat << EOT
+  esac
+}
+EOT
+
+  # help
+  cat << EOT
+
+help()
+{
+  if [[ -n "\${3}" ]]; then
+    echo "Usage: \${1} [OPTIONS]"
+  else
+    echo "Usage: \${1}"
+  fi
+  if [[ -n "\${2}" ]]; then
+    for arg in \${2}; do
+      data "\${arg}" ": "
+    done
+  fi
+  if [[ -n "\${3}" ]]; then
+    echo
+    echo "Options:"
+    echo "  -d, --data <DATA>  Set data"
+    echo "  -h, --help         Show help message"
+    echo
+    echo "Data:"
+    for arg in \${3}; do
+      data "\${arg}" "="
+    done
+  fi
+}
+EOT
+
+  # arguments()
+  cat << EOT
+
+arguments()
+{
+  local -r command="\${1}"
+  local -r parameter="\${2}"
+  local -r query="\${3}"
+  local arg=
+  local data=
+  shift 4
+
+  while [[ ! "\${1}" = "" ]]; do
+    case "\${1}" in
+      -d|--data)
+        arg="\${2%%=*}"
+        data="\${2#*=}"
+        if [[ ! "\${query}" =~ \${arg}\\  ]]; then
+          echo "cli: invalid data: \${arg}" >&2
+          exit 1
+        fi
+        case "\${arg}" in
+EOT
+  local regex
+  while IFS= read -r arg; do
+    pattern=$(config_arguments_pattern "${arg}")
+    # shellcheck disable=SC2001
+    regex="$(echo "${pattern}" | sed 's/\([{}]\)/\\\1/g')"
+  cat << EOT
+          ${arg})
+            if [[ -z "\${data}" ]] || [[ ! "\${data}" =~ ^(${regex})\$ ]]; then
+              echo "cli: invalid data: ${arg}=${pattern}: \${data}" >&2
+              exit 1
+            fi
+            ${arg}="\${data}"
+            ;;
+EOT
+  done < <(config_arguments_keys)
+  cat << EOT
+          *)
+            echo "cli: invalid data: \${arg}" >&2
+            exit 1
+            ;;
+        esac
+        shift 2
+        ;;
+      -h|--help)
+        help "\${command}" "\${parameter}" "\${query}"
+        exit 0
+        ;;
+      *)
+        shift 1
+        ;;
+    esac
+  done
+}
+EOT
+
+  # main()
+  cat << EOT
+
+main()
+{
+  case "\${1}" in
+EOT
+
+  local route
+  local filter
+  local query
+  local var
+  while IFS= read -r route; do
+    filter=$(config_routes_filter "${route}")
+    arg=$(config_settings_cli_options)
+    if [[ -n "${library_path}" ]]; then
+      arg="${arg} -L \"\${library_path}\" "
+    fi
+    query=''
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      config_arguments_has "${var}"
+      arg="${arg} --arg ${var} \"\${${var}}\""
+      query="${query}${var} "
+    done < <(config_routes_parameters "${route}")
+    cat << EOT
+    ${route})
+      arguments '${route}' '' '${query}' "\${@}"
+      jq ${arg} '${filter}' "\${json}"
+      ;;
+EOT
+  done < <(config_routes_keys | grep -v '{.*}')
+
+  local parameter
+  local rematch
+  while IFS= read -r route; do
+    filter=$(config_routes_filter "${route}")
+    arg=$(config_settings_cli_options)
+    if [[ -n "${library_path}" ]]; then
+      arg="${arg} -L \"\${library_path}\" "
+    fi
+    regex="${route}"
+    parameter=
+    while IFS= read -r var; do
+      config_arguments_has "${var}"
+      arg="${arg} --arg ${var} \"\${${var}}\""
+      pattern=$(config_arguments_pattern "${var}")
+      regex=${regex//\{${var}\}/(${pattern})}
+      parameter="${parameter}${var} "
+    done < <(config_route_remove_curly_braces "${route}")
+    query=''
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      config_arguments_has "${var}"
+      arg="${arg} --arg ${var} \"\${${var}}\""
+      query="${query}${var} "
+    done < <(config_routes_parameters "${route}")
+    # shellcheck disable=SC2001
+    var="$(echo "${route}"| sed 's/{[^}]*}/*/g')"
+    cat << EOT
+    ${var})
+      if [[ ! "\${1}" =~ ^${regex}\$ ]]; then
+        help '${route}' '${parameter}' '${query}'
+        exit 1
+      fi
+EOT
+    rematch=1
+    for var in ${parameter}; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      cat << EOT
+      local -r ${var}=\${BASH_REMATCH[${rematch}]}
+EOT
+      rematch=$((rematch+1))
+    done
+    cat << EOT
+      arguments '${route}' '${parameter}' '${query}' "\${@}"
+      jq ${arg} '${filter}' "\${json}"
+      ;;
+EOT
+  done < <(config_routes_keys | grep '{.*}' | sort -r)
+  cat << EOT
+    -h|--help|"")
+      echo "Usage: <COMMAND>"
+      echo
+      echo "Command:"
+EOT
+  while IFS= read -r route; do
+  cat << EOT
+      echo "  ${route}"
+EOT
+  done < <(config_routes_keys)
+  cat << EOT
+      ;;
+    *)
+      echo "cli: command not found: \${1}"
+      exit 1
+      ;;
+  esac
+}
+
+main "\${@}"
+EOT
+
+}
+
+generage_nginx_config()
+{
+  local json_file
+  json_file=$(config_json)
+  cat << EOT
+default_type application/json;
+
+jq_json_file ${json_file};
+EOT
+  local library_path
+  library_path=$(config_library_path)
+  if [[ -n "${library_path}" ]]; then
+    cat << EOT
+jq_library_path ${library_path};
+EOT
+  fi
+
+  local -r cors_orign=$(config_settings_server_cors "origin")
+  local -r cors_methods=$(config_settings_server_cors "methods")
+  local -r cors_headers=$(config_settings_server_cors "headers")
+  local -r cors_credentials=$(config_settings_server_cors "credentials")
+  if [[ -z "${cors_orign}" ]] || [[ "${cors_orign}" == "*" ]]; then
+    cat << EOT
+
+add_header Access-Control-Allow-Origin "*" always;
+EOT
+  else
+    cat << EOT
+
+set \$cors_origin '';
+if (\$http_origin ~ '${cors_orign}') {
+  set \$cors_origin \$http_origin;
+}
+add_header Access-Control-Allow-Origin "\$cors_origin" always;
+add_header Vary 'Origin';
+EOT
+  fi
+  cat << EOT
+add_header Access-Control-Allow-Methods "${cors_methods:-*}";
+add_header Access-Control-Allow-Headers "${cors_headers:-*}";
+EOT
+  if [[ "${cors_credentials}" == "true" ]]; then
+    cat << EOT
+add_header Access-Control-Allow-Credentials true;
+EOT
+  fi
+
+  local route
+  local var
+  local filter
+  while IFS= read -r route; do
+    filter=$(config_routes_filter "${route}")
+    cat << EOT
+
+location = /${route} {
+  include /etc/nginx/preflight.conf;
+EOT
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      config_arguments_has "${var}"
+    cat << EOT
+  jq_set_variable ${var} \$${var} final;
+EOT
+    done < <(config_route_remove_curly_braces "${route}")
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+    cat << EOT
+  jq_set_variable ${var} "";
+EOT
+    done < <(config_routes_parameters "${route}")
+    cat << EOT
+  jq_filter '${filter}';
+}
+EOT
+  done < <(config_routes_keys | grep -v '{.*}')
+
+  local pattern
+  local regex
+  while IFS= read -r route; do
+    regex="${route}"
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      pattern=$(config_arguments_pattern "${var}")
+      regex=${regex//\{${var}\}/(?<${var}>${pattern})}
+    done < <(config_route_remove_curly_braces "${route}")
+
+    filter=$(config_routes_filter "${route}")
+    cat << EOT
+
+location ~ ^/${regex}\$ {
+  include /etc/nginx/preflight.conf;
+EOT
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+      config_arguments_has "${var}"
+    cat << EOT
+  jq_set_variable ${var} \$${var} final;
+EOT
+    done < <(config_route_remove_curly_braces "${route}")
+    while IFS= read -r var; do
+      if [[ -z "${var}" ]]; then
+        continue
+      fi
+    cat << EOT
+  jq_set_variable ${var} "";
+EOT
+    done < <(config_routes_parameters "${route}")
+    cat << EOT
+  jq_filter '${filter}';
+}
+EOT
+  done < <(config_routes_keys | grep '{.*}' | sort -r)
+
+  var=$(config_settings_server_error_filter)
+  if [[ -z "${var}" ]]; then
+    var='{"code":"ERROR","message":"An error has occurred"}'
+  fi
+  cat << EOT
+
+location / {
+  return 404;
+}
+error_page 400 403 404 500 503 @error;
+location @error {
+  include /etc/nginx/preflight.conf;
+  internal;
+  jq_filter '${var}';
+}
+EOT
+}
+
 checksum()
 {
   if [[ ! -f "${checksum_file}" ]] || [[ "${*}" =~ -u ]]; then
@@ -22,7 +528,7 @@ checksum()
 
 generate_cli_script()
 {
-  jq-api-generator cli "${config}" > "${cli_script}"
+  generator_bash_script "${config}" > "${cli_script}"
   chmod 755 "${cli_script}"
   case "${1}" in
     -)
@@ -37,7 +543,7 @@ generate_cli_script()
 
 generate_server_configuration()
 {
-  jq-api-generator server "${config}" > "${server_config}"
+  generage_nginx_config "${config}" > "${server_config}"
   case "${1}" in
     -)
       cat "${server_config}"
