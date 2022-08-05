@@ -37,7 +37,11 @@ config_library_path()
   local path
   path=$(config_jq_filter 'if has("library_path") then .library_path else "" end')
   if [[ -n "${path}" ]]; then
-    realpath "${path}"
+    path=$(realpath "${path}")
+    if [[ ! -d "${path}" ]]; then
+      error "configure: library_path=${path} directory not found"
+    fi
+    echo "${path}"
   fi
 }
 
