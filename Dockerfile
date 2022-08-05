@@ -58,13 +58,13 @@ RUN apk --no-cache upgrade \
       -e 's@access_log .*;$@access_log /dev/stdout main;@' \
       -e 's@log_format main @log_format main escape=none @' \
       -i /etc/nginx/nginx.conf \
+ && echo 'include /var/local/jq-api/server.conf;' > /etc/nginx/http.d/default.conf \
  && mkdir -p /var/local/jq-api \
  && chown nginx:nginx /var/local/jq-api
 
 COPY --from=builder /usr/lib/nginx/modules/ngx_http_jq_module.so /usr/lib/nginx/modules/ngx_http_jq_module.so
 COPY --from=builder /etc/nginx/modules/jq.conf /etc/nginx/modules/jq.conf
 COPY bin/ /usr/local/bin/
-COPY etc/ /etc/
 
 WORKDIR /app
 
