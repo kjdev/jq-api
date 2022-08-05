@@ -543,6 +543,15 @@ EOT
   local -r cors_credentials=$(config_settings_server_cors "credentials")
 
   if [[ -n "${cors_has}" ]]; then
+    cat > "${work_dir}/preflight.conf" << EOF
+if (\$request_method = 'OPTIONS') {
+  add_header Content-Type 'text/plain charset=UTF-8';
+  add_header Content-Length 0;
+  add_header Access-Control-Max-Age 3600;
+  return 204;
+}
+EOF
+
     if [[ -z "${cors_orign}" ]] || [[ "${cors_orign}" == "*" ]]; then
       cat << EOT
 
@@ -581,7 +590,7 @@ EOT
 EOT
     if [[ -n "${cors_has}" ]]; then
       cat << EOT
-    include /etc/nginx/preflight.conf;
+    include ${work_dir}/preflight.conf;
 EOT
     fi
     while IFS= read -r var; do
@@ -626,7 +635,7 @@ EOT
 EOT
     if [[ -n "${cors_has}" ]]; then
       cat << EOT
-    include /etc/nginx/preflight.conf;
+    include ${work_dir}/preflight.conf;
 EOT
     fi
     while IFS= read -r var; do
@@ -666,7 +675,7 @@ EOT
 EOT
   if [[ -n "${cors_has}" ]]; then
     cat << EOT
-    include /etc/nginx/preflight.conf;
+    include ${work_dir}/preflight.conf;
 EOT
   fi
   cat << EOT
