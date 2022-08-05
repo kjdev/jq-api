@@ -452,6 +452,10 @@ EOT
   cat << EOT
 default_type application/json;
 
+gzip on;
+gzip_types application/json;
+gzip_vary on;
+
 jq_json_file ${json_file};
 EOT
   local library_path
