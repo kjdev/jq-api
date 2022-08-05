@@ -117,6 +117,15 @@ config_settings_cli_options()
   fi
 }
 
+config_settings_server_cors_has()
+{
+  local has
+  has=$(config_jq_filter ".settings.server | has(\"cors\")")
+  if [[ "${has}" == "true" ]]; then
+    echo "cors"
+  fi
+}
+
 config_settings_server_cors()
 {
   local -r key="${1}"
@@ -396,17 +405,20 @@ jq_library_path ${library_path};
 EOT
   fi
 
+  local -r cors_has=$(config_settings_server_cors_has)
   local -r cors_orign=$(config_settings_server_cors "origin")
   local -r cors_methods=$(config_settings_server_cors "methods")
   local -r cors_headers=$(config_settings_server_cors "headers")
   local -r cors_credentials=$(config_settings_server_cors "credentials")
-  if [[ -z "${cors_orign}" ]] || [[ "${cors_orign}" == "*" ]]; then
-    cat << EOT
+
+  if [[ -n "${cors_has}" ]]; then
+    if [[ -z "${cors_orign}" ]] || [[ "${cors_orign}" == "*" ]]; then
+      cat << EOT
 
 add_header Access-Control-Allow-Origin "*" always;
 EOT
-  else
-    cat << EOT
+    else
+      cat << EOT
 
 set \$cors_origin '';
 if (\$http_origin ~ '${cors_orign}') {
@@ -415,15 +427,16 @@ if (\$http_origin ~ '${cors_orign}') {
 add_header Access-Control-Allow-Origin "\$cors_origin" always;
 add_header Vary 'Origin';
 EOT
-  fi
-  cat << EOT
+    fi
+    cat << EOT
 add_header Access-Control-Allow-Methods "${cors_methods:-*}";
 add_header Access-Control-Allow-Headers "${cors_headers:-*}";
 EOT
-  if [[ "${cors_credentials}" == "true" ]]; then
-    cat << EOT
+    if [[ "${cors_credentials}" == "true" ]]; then
+      cat << EOT
 add_header Access-Control-Allow-Credentials true;
 EOT
+    fi
   fi
 
   local route
@@ -434,8 +447,12 @@ EOT
     cat << EOT
 
 location = /${route} {
+EOT
+    if [[ -n "${cors_has}" ]]; then
+      cat << EOT
   include /etc/nginx/preflight.conf;
 EOT
+    fi
     while IFS= read -r var; do
       if [[ -z "${var}" ]]; then
         continue
@@ -475,8 +492,12 @@ EOT
     cat << EOT
 
 location ~ ^/${regex}\$ {
+EOT
+    if [[ -n "${cors_has}" ]]; then
+      cat << EOT
   include /etc/nginx/preflight.conf;
 EOT
+    fi
     while IFS= read -r var; do
       if [[ -z "${var}" ]]; then
         continue
@@ -511,7 +532,13 @@ location / {
 }
 error_page 400 403 404 500 503 @error;
 location @error {
+EOT
+  if [[ -n "${cors_has}" ]]; then
+    cat << EOT
   include /etc/nginx/preflight.conf;
+EOT
+  fi
+  cat << EOT
   internal;
   jq_filter '${var}';
 }
