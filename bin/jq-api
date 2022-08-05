@@ -477,8 +477,8 @@ EOT
 
   cat << EOT
 server {
-listen 80 default_server;
-listen [::]:80 default_server;
+  listen 80 default_server;
+  listen [::]:80 default_server;
 EOT
 
   local -r ssl_has=$(config_settings_server_ssl_has)
@@ -488,11 +488,11 @@ EOT
     local ssl_cert_key
     ssl_cert_key=$(config_settings_server_ssl "certificate_key")
     cat << EOT
-listen 443 ssl http2 default_server;
-listen [::]:443 ssl http2 default_server;
+  listen 443 ssl http2 default_server;
+  listen [::]:443 ssl http2 default_server;
 
-ssl_certificate ${ssl_cert};
-ssl_certificate_key ${ssl_cert_key};
+  ssl_certificate ${ssl_cert};
+  ssl_certificate_key ${ssl_cert_key};
 
 EOT
   fi
@@ -520,19 +520,19 @@ EOT
   local json_file
   json_file=$(config_json)
   cat << EOT
-default_type application/json;
+  default_type application/json;
 
-gzip on;
-gzip_types application/json;
-gzip_vary on;
+  gzip on;
+  gzip_types application/json;
+  gzip_vary on;
 
-jq_json_file ${json_file};
+  jq_json_file ${json_file};
 EOT
   local library_path
   library_path=$(config_library_path)
   if [[ -n "${library_path}" ]]; then
     cat << EOT
-jq_library_path ${library_path};
+  jq_library_path ${library_path};
 EOT
   fi
 
@@ -546,26 +546,26 @@ EOT
     if [[ -z "${cors_orign}" ]] || [[ "${cors_orign}" == "*" ]]; then
       cat << EOT
 
-add_header Access-Control-Allow-Origin "*" always;
+  add_header Access-Control-Allow-Origin "*" always;
 EOT
     else
       cat << EOT
 
-set \$cors_origin '';
-if (\$http_origin ~ '${cors_orign}') {
-  set \$cors_origin \$http_origin;
-}
-add_header Access-Control-Allow-Origin "\$cors_origin" always;
-add_header Vary 'Origin';
+  set \$cors_origin '';
+  if (\$http_origin ~ '${cors_orign}') {
+    set \$cors_origin \$http_origin;
+  }
+  add_header Access-Control-Allow-Origin "\$cors_origin" always;
+  add_header Vary 'Origin';
 EOT
     fi
     cat << EOT
-add_header Access-Control-Allow-Methods "${cors_methods:-*}";
-add_header Access-Control-Allow-Headers "${cors_headers:-*}";
+  add_header Access-Control-Allow-Methods "${cors_methods:-*}";
+  add_header Access-Control-Allow-Headers "${cors_headers:-*}";
 EOT
     if [[ "${cors_credentials}" == "true" ]]; then
       cat << EOT
-add_header Access-Control-Allow-Credentials true;
+  add_header Access-Control-Allow-Credentials true;
 EOT
     fi
   fi
@@ -577,11 +577,11 @@ EOT
     filter=$(config_routes_filter "${route}")
     cat << EOT
 
-location = /${route} {
+  location = /${route} {
 EOT
     if [[ -n "${cors_has}" ]]; then
       cat << EOT
-  include /etc/nginx/preflight.conf;
+    include /etc/nginx/preflight.conf;
 EOT
     fi
     while IFS= read -r var; do
@@ -590,7 +590,7 @@ EOT
       fi
       config_arguments_has "${var}"
     cat << EOT
-  jq_set_variable ${var} \$${var} final;
+    jq_set_variable ${var} \$${var} final;
 EOT
     done < <(config_route_remove_curly_braces "${route}")
     while IFS= read -r var; do
@@ -598,12 +598,12 @@ EOT
         continue
       fi
     cat << EOT
-  jq_set_variable ${var} "";
+    jq_set_variable ${var} "";
 EOT
     done < <(config_routes_parameters "${route}")
     cat << EOT
-  jq_filter '${filter}';
-}
+    jq_filter '${filter}';
+  }
 EOT
   done < <(config_routes_keys | grep -v '{.*}')
 
@@ -622,11 +622,11 @@ EOT
     filter=$(config_routes_filter "${route}")
     cat << EOT
 
-location ~ ^/${regex}\$ {
+  location ~ ^/${regex}\$ {
 EOT
     if [[ -n "${cors_has}" ]]; then
       cat << EOT
-  include /etc/nginx/preflight.conf;
+    include /etc/nginx/preflight.conf;
 EOT
     fi
     while IFS= read -r var; do
@@ -635,7 +635,7 @@ EOT
       fi
       config_arguments_has "${var}"
     cat << EOT
-  jq_set_variable ${var} \$${var} final;
+    jq_set_variable ${var} \$${var} final;
 EOT
     done < <(config_route_remove_curly_braces "${route}")
     while IFS= read -r var; do
@@ -643,12 +643,12 @@ EOT
         continue
       fi
     cat << EOT
-  jq_set_variable ${var} "";
+    jq_set_variable ${var} "";
 EOT
     done < <(config_routes_parameters "${route}")
     cat << EOT
-  jq_filter '${filter}';
-}
+    jq_filter '${filter}';
+  }
 EOT
   done < <(config_routes_keys | grep '{.*}' | sort -r)
 
@@ -658,21 +658,21 @@ EOT
   fi
   cat << EOT
 
-location / {
-  return 404;
-}
-error_page 400 403 404 500 503 @error;
-location @error {
+  location / {
+    return 404;
+  }
+  error_page 400 403 404 500 503 @error;
+  location @error {
 EOT
   if [[ -n "${cors_has}" ]]; then
     cat << EOT
-  include /etc/nginx/preflight.conf;
+    include /etc/nginx/preflight.conf;
 EOT
   fi
   cat << EOT
-  internal;
-  jq_filter '${var}';
-}
+    internal;
+    jq_filter '${var}';
+  }
 }
 EOT
 }
