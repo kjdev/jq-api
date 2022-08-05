@@ -25,7 +25,11 @@ config_jq_filter()
 
 config_json()
 {
-  realpath "$(config_jq_filter .json)"
+  local -r file=$(realpath "$(config_jq_filter .json)")
+  if [[ ! -r "${file}" ]]; then
+    error "configure: json=${file} file not found"
+  fi
+  echo "${file}"
 }
 
 config_library_path()
