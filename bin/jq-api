@@ -138,6 +138,34 @@ config_settings_server_cors()
   fi
 }
 
+config_settings_server_ssl_has()
+{
+  local has
+  has=$(config_jq_filter ".settings.server | has(\"ssl\")")
+  if [[ "${has}" == "true" ]]; then
+    echo "ssl"
+  fi
+}
+
+config_settings_server_ssl()
+{
+  local -r key="${1}"
+  if [[ -z "${key}" ]]; then
+    error "configure: settings.server.ssl key is not specified"
+  fi
+
+  local -r var=$(config_jq_filter ".settings.server.ssl.\"${key}\"")
+  if [[ -z "${var}" ]] || [[ "${var}" == "null" ]]; then
+    error "configure: settings.server.ssl.${key} key is missing"
+  fi
+
+  local -r file=$(realpath "${var}")
+  if [[ ! -r "${file}" ]]; then
+    error "configure: settings.server.ssl.${key}=${file} file not found"
+  fi
+  echo "${file}"
+}
+
 config_settings_server_error_filter()
 {
   local var
@@ -390,6 +418,22 @@ EOT
 
 generage_nginx_config()
 {
+  local -r ssl_has=$(config_settings_server_ssl_has)
+  if [[ -n "${ssl_has}" ]]; then
+    local ssl_cert
+    ssl_cert=$(config_settings_server_ssl "certificate")
+    local ssl_cert_key
+    ssl_cert_key=$(config_settings_server_ssl "certificate_key")
+    cat << EOT
+listen 443 ssl http2 default_server;
+listen [::]:443 ssl http2 default_server;
+
+ssl_certificate ${ssl_cert};
+ssl_certificate_key ${ssl_cert_key};
+
+EOT
+  fi
+
   local json_file
   json_file=$(config_json)
   cat << EOT
