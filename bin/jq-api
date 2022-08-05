@@ -125,6 +125,28 @@ config_settings_cli_options()
   fi
 }
 
+config_settings_server_cache_has()
+{
+  local has
+  has=$(config_jq_filter ".settings.server | has(\"cache\")")
+  if [[ "${has}" == "true" ]]; then
+    echo "cache"
+  fi
+}
+
+config_settings_server_cache()
+{
+  local -r key="${1}"
+  if [[ -z "${key}" ]]; then
+    error "configure: settings.server.cache key is not specified"
+  fi
+  local -r var=$(config_jq_filter ".settings.server.cache.\"${key}\"")
+  if [[ -z "${var}" ]] || [[ "${var}" == "null" ]]; then
+    error "configure: settings.server.cache.${key} key is missing"
+  fi
+  echo "${var}"
+}
+
 config_settings_server_cors_has()
 {
   local has
@@ -426,7 +448,35 @@ EOT
 
 generage_nginx_config()
 {
+  local -r cache_has=$(config_settings_server_cache_has)
+  if [[ -n "${cache_has}" ]]; then
+    local cache_path
+    cache_path=$(config_settings_server_cache "path")
+    local cache_check_path
+    local cache_check_path_has
+    cache_check_path="${cache_path}"
+    while [[ "${cache_check_path}" != "/" ]] && [[ "${cache_check_path}" != "." ]]; do
+      if [[ -d "${cache_check_path}" ]]; then
+        cache_check_path_has="true"
+        break
+      fi
+      cache_check_path=$(dirname "${cache_check_path}")
+    done
+    if [[ -z "${cache_check_path_has}" ]]; then
+      error "configure: setting.server.cache.path=${cache_path} directory not found"
+    fi
+    local cache_time
+    cache_time=$(config_settings_server_cache "time")
+    local cache_max_size
+    cache_max_size=$(config_settings_server_cache "max_size")
+    cat << EOT
+proxy_cache_path ${cache_path} levels=1:2 use_temp_path=off keys_zone=cache:1m inactive=${cache_time} max_size=${cache_max_size};
+
+EOT
+  fi
+
   cat << EOT
+server {
 listen 80 default_server;
 listen [::]:80 default_server;
 EOT
@@ -443,6 +493,26 @@ listen [::]:443 ssl http2 default_server;
 
 ssl_certificate ${ssl_cert};
 ssl_certificate_key ${ssl_cert_key};
+
+EOT
+  fi
+
+  if [[ -n "${cache_has}" ]]; then
+  cat << EOT
+  location / {
+    proxy_cache cache;
+    proxy_pass http://127.0.0.1:8080;
+    proxy_cache_valid 200 ${cache_time};
+    proxy_cache_bypass \$cookie_nocache \$arg_nocache\$arg_comment;
+    proxy_http_version 1.1;
+    proxy_ignore_client_abort on;
+    proxy_ignore_headers Cache-Control;
+    add_header X-Cache-Status \$upstream_cache_status;
+  }
+}
+
+server {
+  listen 8080;
 
 EOT
   fi
@@ -602,6 +672,7 @@ EOT
   cat << EOT
   internal;
   jq_filter '${var}';
+}
 }
 EOT
 }
