@@ -498,7 +498,11 @@ EOT
   fi
 
   if [[ -n "${cache_has}" ]]; then
-  cat << EOT
+    cat << EOT
+  gzip on;
+  gzip_types application/json;
+  gzip_vary on;
+
   location / {
     proxy_cache cache;
     proxy_pass http://127.0.0.1:8080;
@@ -522,10 +526,16 @@ EOT
   cat << EOT
   default_type application/json;
 
+EOT
+  if [[ -z "${cache_has}" ]]; then
+    cat << EOT
   gzip on;
   gzip_types application/json;
   gzip_vary on;
 
+EOT
+  fi
+  cat << EOT
   jq_json_file ${json_file};
 EOT
   local library_path
