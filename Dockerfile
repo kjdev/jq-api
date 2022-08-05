@@ -72,3 +72,5 @@ USER nginx
 ENTRYPOINT ["/usr/local/bin/jq-api"]
 
 ONBUILD COPY . /app/
+ONBUILD RUN /usr/local/bin/jq-api generate cli \
+         && /usr/local/bin/jq-api generate server
